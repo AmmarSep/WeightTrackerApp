@@ -3,10 +3,10 @@ const STORAGE_KEY = 'weightTrackerData';
 
 // GitHub Sync Configuration
 const GITHUB_CONFIG = {
-    owner: "YOUR_GITHUB_USERNAME",
-    repo: "YOUR_REPO_NAME",
+    owner: "AmmarSep",
+    repo: "WeightTrackerApp",
     path: "weights.json",
-    token: "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN" // Requires 'repo' scope
+    token: "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" // Requires 'repo' scope
 };
 
 // --- State ---
