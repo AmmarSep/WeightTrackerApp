@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weight Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Weight Tracker</h1>
+            <div class="header-actions">
+                <button id="themeToggle" class="btn btn-icon" title="Toggle Dark Mode">🌙</button>
+                <button id="syncBtn" class="btn btn-primary">Sync Data</button>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <!-- Add Entry Section -->
+            <section class="card form-section">
+                <h2>Add New Entry</h2>
+                <form id="addWeightForm">
+                    <div class="form-group">
+                        <label for="dateInput">Date</label>
+                        <input type="date" id="dateInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="weightInput">Weight (kg)</label>
+                        <input type="number" id="weightInput" step="0.1" min="1" required>
+                    </div>
+                    <button type="submit" class="btn btn-success">Add Entry</button>
+                </form>
+            </section>
+
+            <!-- Statistics Section -->
+            <section class="card stats-section">
+                <h2>Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <h3>Current Weight</h3>
+                        <p id="statCurrent">-- kg</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Total Change</h3>
+                        <p id="statChange">-- kg</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Average Weight</h3>
+                        <p id="statAverage">-- kg</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chart Section -->
+            <section class="card chart-section">
+                <h2>Progress Chart</h2>
+                <div class="canvas-container">
+                    <canvas id="weightChart"></canvas>
+                </div>
+            </section>
+
+            <!-- History Section -->
+            <section class="card history-section">
+                <div class="history-header">
+                    <h2>Weight History</h2>
+                    <button id="exportCsvBtn" class="btn btn-secondary">Export CSV</button>
+                </div>
+                <div class="table-container">
+                    <table id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Weight (kg)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <!-- Entries will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
