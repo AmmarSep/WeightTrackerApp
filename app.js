@@ -1,14 +1,6 @@
 // --- Configuration ---
 const STORAGE_KEY = 'weightTrackerData';
 
-// GitHub Sync Configuration
-const GITHUB_CONFIG = {
-    owner: "AmmarSep",
-    repo: "WeightTrackerApp",
-    path: "weights.json",
-    token: "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" // Requires 'repo' scope
-};
-
 // --- State ---
 let entries = [];
 let chartInstance = null;
@@ -22,7 +14,9 @@ const statCurrent = document.getElementById('statCurrent');
 const statChange = document.getElementById('statChange');
 const statAverage = document.getElementById('statAverage');
 const themeToggle = document.getElementById('themeToggle');
-const syncBtn = document.getElementById('syncBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importInput = document.getElementById('importInput');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 
 // --- Initialization ---
@@ -42,8 +36,10 @@ function init() {
     // Event Listeners
     form.addEventListener('submit', handleAddEntry);
     themeToggle.addEventListener('click', toggleTheme);
-    syncBtn.addEventListener('click', handleSync);
     exportCsvBtn.addEventListener('click', exportCSV);
+    exportBtn.addEventListener('click', handleExport);
+    importBtn.addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', handleImport);
 }
 
 // --- Data Management ---
@@ -263,122 +259,102 @@ function exportCSV() {
     document.body.removeChild(a);
 }
 
-// --- GitHub Sync ---
-// Helper to encode/decode base64 correctly with UTF-8 support
-const b64DecodeUnicode = str => decodeURIComponent(Array.prototype.map.call(atob(str), c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-const b64EncodeUnicode = str => btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+// --- JSON Export / Import Sync ---
 
-async function handleSync() {
-    if (GITHUB_CONFIG.token === "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN" || !GITHUB_CONFIG.owner || !GITHUB_CONFIG.repo) {
-        alert("GitHub Sync is not configured. Please update GITHUB_CONFIG in app.js");
+// Export logic:
+// Reads all entries from LocalStorage (currently loaded in the `entries` state).
+// Converts the array to a JSON string.
+// Creates a Blob with the JSON data and generates a temporary URL to trigger the file download.
+function handleExport() {
+    if (entries.length === 0) {
+        alert("No data to export.");
         return;
     }
 
-    syncBtn.textContent = 'Syncing...';
-    syncBtn.disabled = true;
+    const dataStr = JSON.stringify(entries, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
 
-    const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`;
-    const headers = {
-        'Authorization': `token ${GITHUB_CONFIG.token}`,
-        'Accept': 'application/vnd.github.v3+json'
-    };
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "weights.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Import logic:
+// Triggered when a file is selected. Reads the file as text.
+// Parses the JSON string into an array of objects.
+// Performs error handling to ensure the file is valid and follows the expected structure.
+async function handleImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
     try {
-        // Step 1: Pull data
-        let fileSha = null;
-        let cloudData = [];
+        const text = await file.text();
         
-        try {
-            const getResponse = await fetch(apiUrl, { headers, method: 'GET' });
-            if (getResponse.ok) {
-                const getResult = await getResponse.json();
-                fileSha = getResult.sha;
-                
-                // Decode Base64 content to JSON string, then parse
-                const decodedContent = b64DecodeUnicode(getResult.content);
-                try {
-                    cloudData = JSON.parse(decodedContent);
-                } catch (parseError) {
-                    throw new Error("Invalid JSON in remote weights.json file.");
-                }
-            } else if (getResponse.status !== 404) {
-                const errorData = await getResponse.json();
-                throw new Error(errorData.message || "Failed to fetch from GitHub.");
-            }
-            // If 404, it means the file doesn't exist yet, which is fine (cloudData remains [])
-        } catch (networkError) {
-            throw new Error(`Network/Fetch error: ${networkError.message}`);
+        // Error handling: Empty file
+        if (!text.trim()) {
+            throw new Error("The selected file is empty.");
         }
 
-        // Step 2: Merge logic (Unique key = date + weight, avoid duplicates, preserve newest)
-        // Since we don't have timestamps, we merge by adding all local and cloud data,
-        // and using a combination of date+weight as a unique key to filter out duplicates.
+        // Error handling: Invalid JSON file
+        const importedData = JSON.parse(text);
+
+        // Error handling: Wrong structure
+        if (!Array.isArray(importedData)) {
+            throw new Error("Invalid file format. Expected a JSON array.");
+        }
+
+        // Validate structure of individual items
+        const isValidStructure = importedData.every(item => 
+            item.hasOwnProperty('date') && 
+            item.hasOwnProperty('weight') &&
+            typeof item.date === 'string' &&
+            typeof item.weight === 'number'
+        );
+
+        if (!isValidStructure) {
+            throw new Error("Invalid data structure. Entries must contain 'date' (string) and 'weight' (number).");
+        }
+
+        // Merge logic:
+        // Use a Map to avoid duplicates.
+        // Unique key is constructed using date + weight.
+        // We preserve existing entries and merge in new, non-duplicate entries from the imported data.
         const mergedMap = new Map();
         
-        // Add cloud data first
-        cloudData.forEach(entry => {
-            if (entry && entry.date && entry.weight) {
-                const key = `${entry.date}_${entry.weight}`;
-                mergedMap.set(key, entry);
-            }
-        });
-        
-        // Add local data (will overwrite cloud if same key, preserving local/newest entries for that key)
+        // Add existing local entries first to preserve them
         entries.forEach(entry => {
-            if (entry && entry.date && entry.weight) {
-                const key = `${entry.date}_${entry.weight}`;
-                mergedMap.set(key, entry);
-            }
+            const key = `${entry.date}_${entry.weight}`;
+            mergedMap.set(key, entry);
         });
 
-        const mergedEntries = Array.from(mergedMap.values());
-        
-        // Sort by date just to keep the internal array organized
-        mergedEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        // Step 3: Push data
-        const newContentJson = JSON.stringify(mergedEntries, null, 2);
-        const encodedContent = b64EncodeUnicode(newContentJson);
-        
-        const putBody = {
-            message: "Sync weight tracker data",
-            content: encodedContent
-        };
-        
-        if (fileSha) {
-            putBody.sha = fileSha; // Required for updating an existing file
-        }
-
-        const putResponse = await fetch(apiUrl, {
-            method: 'PUT',
-            headers: {
-                ...headers,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(putBody)
+        // Add imported entries. Overwrites duplicates with the same date+weight, effectively avoiding duplicates.
+        importedData.forEach(entry => {
+            const key = `${entry.date}_${entry.weight}`;
+            mergedMap.set(key, entry);
         });
 
-        if (!putResponse.ok) {
-            const putResult = await putResponse.json();
-            if (putResponse.status === 409) {
-                throw new Error("Merge conflict: The file was updated remotely during sync. Please try syncing again.");
-            }
-            throw new Error(putResult.message || "Failed to push to GitHub.");
-        }
+        // Convert the merged map back to an array
+        entries = Array.from(mergedMap.values());
+        
+        // Sort by date descending (though updateUI also sorts them, good for state consistency)
+        entries.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        // Update local state and UI
-        entries = mergedEntries;
         saveData();
         updateUI();
 
-        alert("Sync completed successfully!");
+        alert("Data imported successfully!");
 
     } catch (error) {
-        console.error("Sync error:", error);
-        alert(`Error during sync: ${error.message}`);
+        console.error("Import error:", error);
+        alert(`Error importing data: ${error.message}`);
     } finally {
-        syncBtn.textContent = 'Sync Data';
-        syncBtn.disabled = false;
+        // Reset the file input so the same file can be imported again if needed
+        event.target.value = '';
     }
 }
 
